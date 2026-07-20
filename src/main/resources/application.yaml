@@ -1,5 +1,5 @@
 spring:
   application:
-    name: X-Inventory-Service
+    name: x-inventory-service
 server:
   port : 8085

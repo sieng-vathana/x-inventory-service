@@ -11,8 +11,8 @@
 	<groupId>com.x</groupId>
 	<artifactId>x-inventory-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
+	<name>x-inventory-service</name>
+<description/>
 	<url/>
 	<licenses>
 		<license/>
