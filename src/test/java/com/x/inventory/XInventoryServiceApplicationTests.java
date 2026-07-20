@@ -1,10 +1,10 @@
-package com.VyntraInventoryService;
+package com.x.inventory;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class VyntraInventoryServiceApplicationTests {
+class XInventoryServiceApplicationTests {
 
 	@Test
 	void contextLoads() {

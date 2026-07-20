@@ -1,13 +1,13 @@
-package com.VyntraInventoryService;
+package com.x.inventory;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class VyntraInventoryServiceApplication {
+public class XInventoryServiceApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(VyntraInventoryServiceApplication.class, args);
+		SpringApplication.run(XInventoryServiceApplication.class, args);
 	}
 
 }
