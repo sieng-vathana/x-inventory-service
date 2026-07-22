@@ -1,5 +1,18 @@
 spring:
+  banner:
+    location: classpath:banner.txt
+    mode: console
   application:
     name: x-inventory-service
 server:
   port : 8085
+
+x:
+  http:
+    logging:
+      enabled: true
+      server: x-inventory-service
+      hop: "x-api-gateway → x-bff → x-inventory-service"
+      hops:
+        /api/v1/stock: "x-api-gateway → x-bff → x-inventory-service"
+        /api/v1/home: "x-api-gateway → x-bff → x-inventory-service"
