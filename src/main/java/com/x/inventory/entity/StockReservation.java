@@ -8,6 +8,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -17,7 +19,8 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_reservations")
+@Table(name = "stock_reservations", uniqueConstraints = @UniqueConstraint(
+        name = "uk_stock_reservation_order_variant", columnNames = {"order_id", "variant_id"}))
 @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
 public class StockReservation {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,4 +32,5 @@ public class StockReservation {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 16)
     private ReservationStatus status;
     @Column(name = "expires_at", nullable = false) private LocalDateTime expiresAt;
+    @Version private Long version;
 }

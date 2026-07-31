@@ -2,4 +2,18 @@ spring:
   config:
     activate:
       on-profile: local
-  # inventory stub — DB optional later
+    import: optional:file:../config/secrets.yml
+  datasource:
+    url: jdbc:mysql://${db.dev.host}:${db.dev.port}/${db.dev.name}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${db.dev.username}
+    password: ${db.dev.password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
