@@ -34,7 +34,7 @@ public class InventoryService {
     public StockBalanceResponse getBalance(Long storeId, Long variantId) {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Stock balance not found"));
+                .orElseGet(() -> new StockBalanceResponse(null, storeId, variantId, 0, 0, 0));
     }
 
     @Transactional
