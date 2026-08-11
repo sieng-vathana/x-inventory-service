@@ -17,3 +17,7 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+
+services:
+  product:
+    base-url: ${PRODUCT_SERVICE_URL:http://127.0.0.1:8082}

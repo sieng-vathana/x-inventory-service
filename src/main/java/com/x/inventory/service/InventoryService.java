@@ -29,12 +29,36 @@ public class InventoryService {
     private final StockBalanceRepository stockBalanceRepository;
     private final InventoryMovementRepository movementRepository;
     private final StockReservationRepository reservationRepository;
+    private final ProductClient productClient;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public StockBalanceResponse getBalance(Long storeId, Long variantId) {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
-                .orElseGet(() -> new StockBalanceResponse(null, storeId, variantId, 0, 0, 0));
+                .orElseGet(() -> initializeFromCatalog(storeId, variantId));
+    }
+
+    /**
+     * Product creation historically stored initial stock on the product variant.
+     * Import it only when the inventory balance does not exist. After this point,
+     * stock_balances is the source of truth for stock changes and reservations.
+     */
+    private StockBalanceResponse initializeFromCatalog(Long storeId, Long variantId) {
+        ProductVariantStock catalogVariant = productClient.getVariant(variantId);
+        if (!storeId.equals(catalogVariant.storeId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Product variant does not belong to store " + storeId);
+        }
+
+        long quantity = Math.max(0, catalogVariant.quantity() == null ? 0 : catalogVariant.quantity());
+        StockBalance balance = stockBalanceRepository.save(StockBalance.builder()
+                .storeId(storeId)
+                .variantId(variantId)
+                .quantityOnHand(quantity)
+                .quantityReserved(0)
+                .version(0L)
+                .build());
+        return toResponse(balance);
     }
 
     @Transactional
