@@ -32,10 +32,10 @@ public class InventoryService {
     private final ProductClient productClient;
 
     @Transactional
-    public StockBalanceResponse getBalance(Long storeId, Long variantId) {
+    public StockBalanceResponse getBalance(Long storeId, Long variantId, String authorization) {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
-                .orElseGet(() -> initializeFromCatalog(storeId, variantId));
+                .orElseGet(() -> initializeFromCatalog(storeId, variantId, authorization));
     }
 
     /**
@@ -43,8 +43,8 @@ public class InventoryService {
      * Import it only when the inventory balance does not exist. After this point,
      * stock_balances is the source of truth for stock changes and reservations.
      */
-    private StockBalanceResponse initializeFromCatalog(Long storeId, Long variantId) {
-        ProductVariantStock catalogVariant = productClient.getVariant(variantId);
+    private StockBalanceResponse initializeFromCatalog(Long storeId, Long variantId, String authorization) {
+        ProductVariantStock catalogVariant = productClient.getVariant(variantId, authorization);
         if (!storeId.equals(catalogVariant.storeId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Product variant does not belong to store " + storeId);
