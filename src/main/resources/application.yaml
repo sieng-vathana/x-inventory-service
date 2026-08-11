@@ -20,7 +20,3 @@ x:
 inventory:
   reservations:
     expiry-scan-ms: ${INVENTORY_RESERVATION_EXPIRY_SCAN_MS:60000}
-
-services:
-  product:
-    base-url: ${PRODUCT_SERVICE_URL:http://x-product-service:8082}
