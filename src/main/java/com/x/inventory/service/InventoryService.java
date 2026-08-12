@@ -29,13 +29,13 @@ public class InventoryService {
     private final StockBalanceRepository stockBalanceRepository;
     private final InventoryMovementRepository movementRepository;
     private final StockReservationRepository reservationRepository;
+    private final ProductClient productClient;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public StockBalanceResponse getBalance(Long storeId, Long variantId) {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Stock balance not found for store " + storeId + " and variant " + variantId));
+                .orElseGet(() -> initializeFromCatalog(storeId, variantId));
     }
 
     @Transactional
@@ -79,6 +79,7 @@ public class InventoryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A reservation already exists for this order and variant");
         }
+        ensureBalanceFromCatalog(request.storeId(), request.variantId());
         int updated = stockBalanceRepository.reserveAvailable(
                 request.storeId(), request.variantId(), request.quantity());
         if (updated == 0) {
@@ -179,6 +180,22 @@ public class InventoryService {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Stock balance not found"));
+    }
+
+    private void ensureBalanceFromCatalog(Long storeId, Long variantId) {
+        if (stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId).isPresent()) return;
+        ProductClient.VariantQuantity variant = productClient.getVariantQuantity(variantId);
+        if (variant == null || !storeId.equals(variant.storeId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Product variant does not belong to store " + storeId);
+        }
+        stockBalanceRepository.initializeIfMissing(storeId, variantId,
+                Math.max(0, variant.quantity() == null ? 0 : variant.quantity()));
+    }
+
+    private StockBalanceResponse initializeFromCatalog(Long storeId, Long variantId) {
+        ensureBalanceFromCatalog(storeId, variantId);
+        return currentBalance(storeId, variantId);
     }
 
     private void recordMovement(Long storeId, Long variantId, InventoryMovementType type, long delta,

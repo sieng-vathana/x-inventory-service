@@ -2,3 +2,7 @@ spring:
   config:
     activate:
       on-profile: production
+
+services:
+  product:
+    base-url: ${PRODUCT_SERVICE_URL:http://x-product-service:8080}

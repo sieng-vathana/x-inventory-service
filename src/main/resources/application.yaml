@@ -7,6 +7,10 @@ spring:
 server:
   port : 8085
 
+services:
+  product:
+    base-url: ${PRODUCT_SERVICE_URL:http://127.0.0.1:8082}
+
 x:
   http:
     logging:

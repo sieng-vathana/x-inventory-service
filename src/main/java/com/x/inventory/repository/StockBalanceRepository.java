@@ -26,6 +26,17 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
                   @Param("quantity") long quantity);
 
     @Modifying
+    @Query(value = """
+            INSERT INTO stock_balances
+                (store_id, variant_id, quantity_on_hand, quantity_reserved, version)
+            VALUES (:storeId, :variantId, :quantity, 0, 0)
+            ON DUPLICATE KEY UPDATE
+                store_id = store_id
+            """, nativeQuery = true)
+    int initializeIfMissing(@Param("storeId") Long storeId, @Param("variantId") Long variantId,
+                            @Param("quantity") long quantity);
+
+    @Modifying
     @Query("""
             update StockBalance b
                set b.quantityOnHand = b.quantityOnHand - :quantity,
