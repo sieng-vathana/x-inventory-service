@@ -184,7 +184,7 @@ public class InventoryService {
 
     private void ensureBalanceFromCatalog(Long storeId, Long variantId) {
         if (stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId).isPresent()) return;
-        ProductClient.VariantQuantity variant = productClient.getVariantQuantity(variantId);
+        ProductClient.VariantQuantity variant = productClient.getVariantQuantity(variantId, storeId);
         if (variant == null || !storeId.equals(variant.storeId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Product variant does not belong to store " + storeId);

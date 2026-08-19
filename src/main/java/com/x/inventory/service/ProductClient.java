@@ -30,8 +30,11 @@ public class ProductClient {
                 .build();
     }
 
-    public VariantQuantity getVariantQuantity(Long variantId) {
-        ApiResponse<VariantQuantity> response = client.get().uri("/variants/{id}", variantId)
+    public VariantQuantity getVariantQuantity(Long variantId, Long storeId) {
+        ApiResponse<VariantQuantity> response = client.get()
+                .uri(uriBuilder -> uriBuilder.path("/variants/{id}")
+                        .queryParam("storeId", storeId)
+                        .build(variantId))
                 .retrieve().body(new ParameterizedTypeReference<>() {});
         if (response == null || response.getData() == null) {
             throw new IllegalStateException("Product service returned no variant");
