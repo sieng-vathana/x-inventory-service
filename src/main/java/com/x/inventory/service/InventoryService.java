@@ -81,7 +81,8 @@ public class InventoryService {
         }
         ensureBalanceFromCatalog(request.storeId(), request.variantId());
         int updated = stockBalanceRepository.reserveAvailable(
-                request.storeId(), request.variantId(), request.quantity());
+                request.storeId(), request.variantId(), request.quantity(),
+                Boolean.TRUE.equals(request.allowNegativeStock()));
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient available stock");
         }

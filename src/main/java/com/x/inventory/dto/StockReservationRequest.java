@@ -10,5 +10,10 @@ public record StockReservationRequest(
         @NotNull @Positive Long variantId,
         @NotNull @Positive Long orderId,
         @Positive long quantity,
-        @NotNull LocalDateTime expiresAt) {
+        @NotNull LocalDateTime expiresAt,
+        Boolean allowNegativeStock) {
+
+    public StockReservationRequest(Long storeId, Long variantId, Long orderId, long quantity, LocalDateTime expiresAt) {
+        this(storeId, variantId, orderId, quantity, expiresAt, false);
+    }
 }

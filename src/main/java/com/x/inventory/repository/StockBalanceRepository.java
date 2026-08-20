@@ -55,10 +55,11 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
                    b.version = b.version + 1
              where b.storeId = :storeId
                and b.variantId = :variantId
-               and b.quantityOnHand - b.quantityReserved >= :quantity
+               and (:allowNegativeStock = true or b.quantityOnHand - b.quantityReserved >= :quantity)
             """)
     int reserveAvailable(@Param("storeId") Long storeId, @Param("variantId") Long variantId,
-                         @Param("quantity") long quantity);
+                         @Param("quantity") long quantity,
+                         @Param("allowNegativeStock") boolean allowNegativeStock);
 
     @Modifying
     @Query("""
@@ -80,7 +81,6 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
                    b.version = b.version + 1
              where b.storeId = :storeId
                and b.variantId = :variantId
-               and b.quantityOnHand >= :quantity
                and b.quantityReserved >= :quantity
             """)
     int consumeReserved(@Param("storeId") Long storeId, @Param("variantId") Long variantId,
