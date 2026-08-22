@@ -1,5 +1,6 @@
 package com.x.inventory.service;
 
+import com.x.inventory.dto.InventoryMovementResponse;
 import com.x.inventory.dto.StockBalanceResponse;
 import com.x.inventory.dto.StockChangeRequest;
 import com.x.inventory.dto.StockReservationRequest;
@@ -12,14 +13,15 @@ import com.x.inventory.repository.InventoryMovementRepository;
 import com.x.inventory.repository.StockBalanceRepository;
 import com.x.inventory.repository.StockReservationRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
@@ -36,6 +38,44 @@ public class InventoryService {
         return stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId)
                 .map(this::toResponse)
                 .orElseGet(() -> initializeFromCatalog(storeId, variantId));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<InventoryMovementResponse> findMovements(
+            Long storeId,
+            Long variantId,
+            InventoryMovementType movementType,
+            LocalDateTime from,
+            LocalDateTime to,
+            int page,
+            int size) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "'from' must be before or equal to 'to'");
+        }
+
+        Specification<InventoryMovement> specification = (root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("storeId"), storeId);
+        if (variantId != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.equal(root.get("variantId"), variantId));
+        }
+        if (movementType != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.equal(root.get("movementType"), movementType));
+        }
+        if (from != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.greaterThanOrEqualTo(root.<LocalDateTime>get("createdAt"), from));
+        }
+        if (to != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.lessThanOrEqualTo(root.<LocalDateTime>get("createdAt"), to));
+        }
+
+        return movementRepository.findAll(specification,
+                        PageRequest.of(page, size, Sort.by(
+                                Sort.Order.desc("createdAt"), Sort.Order.desc("id"))))
+                .map(this::toMovementResponse);
     }
 
     @Transactional
@@ -209,6 +249,14 @@ public class InventoryService {
     private StockBalanceResponse toResponse(StockBalance balance) {
         return new StockBalanceResponse(balance.getId(), balance.getStoreId(), balance.getVariantId(),
                 balance.getQuantityOnHand(), balance.getQuantityReserved(), balance.availableQuantity());
+    }
+
+    private InventoryMovementResponse toMovementResponse(InventoryMovement movement) {
+        return new InventoryMovementResponse(
+                movement.getId(), movement.getStoreId(), movement.getVariantId(),
+                movement.getMovementType(), movement.getQuantityDelta(),
+                movement.getReferenceType(), movement.getReferenceId(), movement.getUserId(),
+                movement.getNote(), movement.getCreatedAt());
     }
 
     private com.x.inventory.dto.StockReservationResponse toReservationResponse(StockReservation reservation) {
