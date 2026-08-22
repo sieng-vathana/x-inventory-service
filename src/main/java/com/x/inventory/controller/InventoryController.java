@@ -1,29 +1,33 @@
 package com.x.inventory.controller;
 
 import com.sharedlib.response.ApiResponse;
+import com.sharedlib.response.PageResponse;
+import com.x.inventory.dto.InventoryMovementResponse;
 import com.x.inventory.dto.StockBalanceResponse;
 import com.x.inventory.dto.StockChangeRequest;
 import com.x.inventory.dto.StockReservationRequest;
 import com.x.inventory.dto.StockReservationResponse;
+import com.x.inventory.entity.InventoryMovementType;
 import com.x.inventory.service.InventoryService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.data.domain.Page;
-import com.sharedlib.response.PageResponse;
-import jakarta.validation.constraints.PositiveOrZero;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
+
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -37,6 +41,24 @@ public class InventoryController {
             @RequestParam @Positive Long variantId) {
         return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(),
                 inventoryService.getBalance(storeId, variantId)));
+    }
+
+    @GetMapping("/movements")
+    public ResponseEntity<ApiResponse<PageResponse<InventoryMovementResponse>>> getMovements(
+            @RequestParam @Positive Long storeId,
+            @RequestParam(required = false) @Positive Long variantId,
+            @RequestParam(required = false) InventoryMovementType movementType,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        Page<InventoryMovementResponse> result = inventoryService.findMovements(
+                storeId, variantId, movementType, from, to, page, size);
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), new PageResponse<>(
+                result.getContent(), result.getNumber(), result.getSize(), result.getTotalElements(),
+                result.getTotalPages(), result.hasNext())));
     }
 
     @PostMapping("/stock-in")
