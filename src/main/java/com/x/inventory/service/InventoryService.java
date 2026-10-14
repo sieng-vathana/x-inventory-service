@@ -81,7 +81,9 @@ public class InventoryService {
     @Transactional
     public StockBalanceResponse stockIn(StockChangeRequest request) {
         stockBalanceRepository.addOnHand(request.storeId(), request.variantId(), request.quantity());
-        recordMovement(request.storeId(), request.variantId(), InventoryMovementType.STOCK_IN, request.quantity(),
+        InventoryMovementType movementType = "ADJUSTMENT".equalsIgnoreCase(request.referenceType())
+                ? InventoryMovementType.ADJUSTMENT_IN : InventoryMovementType.STOCK_IN;
+        recordMovement(request.storeId(), request.variantId(), movementType, request.quantity(),
                 request.referenceType(), request.referenceId(), request.performedBy(), request.note());
         return currentBalance(request.storeId(), request.variantId());
     }
@@ -93,7 +95,9 @@ public class InventoryService {
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient available stock");
         }
-        recordMovement(request.storeId(), request.variantId(), InventoryMovementType.STOCK_OUT, -request.quantity(),
+        InventoryMovementType movementType = "ADJUSTMENT".equalsIgnoreCase(request.referenceType())
+                ? InventoryMovementType.ADJUSTMENT_OUT : InventoryMovementType.STOCK_OUT;
+        recordMovement(request.storeId(), request.variantId(), movementType, -request.quantity(),
                 request.referenceType(), request.referenceId(), request.performedBy(), request.note());
         return currentBalance(request.storeId(), request.variantId());
     }
