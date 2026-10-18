@@ -32,7 +32,7 @@ public class ProductClient {
 
     public VariantQuantity getVariantQuantity(Long variantId, Long storeId) {
         ApiResponse<VariantQuantity> response = client.get()
-                .uri(uriBuilder -> uriBuilder.path("/variants/{id}")
+                .uri(uriBuilder -> uriBuilder.path("/variants/{id}/inventory")
                         .queryParam("storeId", storeId)
                         .build(variantId))
                 .retrieve().body(new ParameterizedTypeReference<>() {});
@@ -44,10 +44,10 @@ public class ProductClient {
 
     public record VariantQuantity(Long storeId, Integer quantity) {}
 
-    /** Names and SKU of a variant sold in the store, kept on purchase lines as they were when ordered. */
+    /** Stockable variant details scoped to a store, used for inventory and purchase ledgers. */
     public VariantDetails getVariantDetails(Long variantId, Long storeId) {
         ApiResponse<VariantDetails> response = client.get()
-                .uri(uriBuilder -> uriBuilder.path("/variants/{id}")
+                .uri(uriBuilder -> uriBuilder.path("/variants/{id}/inventory")
                         .queryParam("storeId", storeId)
                         .build(variantId))
                 .retrieve().body(new ParameterizedTypeReference<>() {});
@@ -70,7 +70,8 @@ public class ProductClient {
         return response.getData();
     }
 
-    public record VariantDetails(Long variantId, Long storeId, String productName, String variantName, String sku) {}
+    public record VariantDetails(Long variantId, Long storeId, String productName, String variantName, String sku,
+                                 Integer quantity) {}
 
     public record SupplierSummary(Long id, String supplierName, String status) {}
 }

@@ -11,7 +11,12 @@ import com.x.inventory.dto.StockBalanceResponse;
 import com.x.inventory.dto.StockChangeRequest;
 import com.x.inventory.dto.StockReservationRequest;
 import com.x.inventory.dto.StockReservationResponse;
+import com.x.inventory.dto.CreateStockTransferRequest;
+import com.x.inventory.dto.ReceiveStockTransferRequest;
+import com.x.inventory.dto.StockTransferCommand;
+import com.x.inventory.dto.StockTransferResponse;
 import com.x.inventory.entity.InventoryMovementType;
+import com.x.inventory.entity.StockTransferStatus;
 import com.x.inventory.service.InventoryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -64,6 +69,65 @@ public class InventoryController {
         return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), new PageResponse<>(
                 result.getContent(), result.getNumber(), result.getSize(), result.getTotalElements(),
                 result.getTotalPages(), result.hasNext())));
+    }
+
+    @GetMapping("/transfers")
+    public ResponseEntity<ApiResponse<PageResponse<StockTransferResponse>>> getTransfers(
+            @RequestParam @Positive Long storeId,
+            @RequestParam(required = false) StockTransferStatus status,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        Page<StockTransferResponse> result = inventoryService.findTransfers(storeId, status, page, size);
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), new PageResponse<>(
+                result.getContent(), result.getNumber(), result.getSize(), result.getTotalElements(),
+                result.getTotalPages(), result.hasNext())));
+    }
+
+    @GetMapping("/transfers/{id}")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> getTransfer(@PathVariable @Positive Long id) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), inventoryService.getTransfer(id)));
+    }
+
+    @PostMapping("/transfers")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> createTransfer(
+            @Valid @RequestBody CreateStockTransferRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(HttpStatus.CREATED.value(),
+                "Stock transfer requested", inventoryService.createTransfer(request)));
+    }
+
+    @PostMapping("/transfers/{id}/approve")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> approveTransfer(
+            @PathVariable @Positive Long id, @Valid @RequestBody StockTransferCommand request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock transfer approved",
+                inventoryService.approveTransfer(id, request)));
+    }
+
+    @PostMapping("/transfers/{id}/reject")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> rejectTransfer(
+            @PathVariable @Positive Long id, @Valid @RequestBody StockTransferCommand request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock transfer rejected",
+                inventoryService.rejectTransfer(id, request)));
+    }
+
+    @PostMapping("/transfers/{id}/cancel")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> cancelTransfer(
+            @PathVariable @Positive Long id, @Valid @RequestBody StockTransferCommand request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock transfer cancelled",
+                inventoryService.cancelTransfer(id, request)));
+    }
+
+    @PostMapping("/transfers/{id}/dispatch")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> dispatchTransfer(
+            @PathVariable @Positive Long id, @Valid @RequestBody StockTransferCommand request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock transfer dispatched",
+                inventoryService.dispatchTransfer(id, request)));
+    }
+
+    @PostMapping("/transfers/{id}/receive")
+    public ResponseEntity<ApiResponse<StockTransferResponse>> receiveTransfer(
+            @PathVariable @Positive Long id, @Valid @RequestBody ReceiveStockTransferRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock transfer receipt recorded",
+                inventoryService.receiveTransfer(id, request)));
     }
 
     @PostMapping("/stock-in")

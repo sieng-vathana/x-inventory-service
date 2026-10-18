@@ -4,10 +4,16 @@ import com.x.inventory.dto.ExpiryBatchResponse;
 import com.x.inventory.dto.ExpirySummaryResponse;
 import com.x.inventory.dto.ExpiryBatchUpdateRequest;
 import com.x.inventory.dto.ExpiryWriteOffRequest;
+import com.x.inventory.dto.CreateStockTransferRequest;
 import com.x.inventory.dto.InventoryMovementResponse;
+import com.x.inventory.dto.ReceiveStockTransferRequest;
 import com.x.inventory.dto.StockBalanceResponse;
 import com.x.inventory.dto.StockChangeRequest;
 import com.x.inventory.dto.StockReservationRequest;
+import com.x.inventory.dto.StockTransferCommand;
+import com.x.inventory.dto.StockTransferLineRequest;
+import com.x.inventory.dto.StockTransferReceiveLineRequest;
+import com.x.inventory.dto.StockTransferResponse;
 import com.x.inventory.entity.InventoryBatch;
 import com.x.inventory.entity.InventoryMovement;
 import com.x.inventory.entity.InventoryMovementType;
@@ -15,11 +21,16 @@ import com.x.inventory.entity.ReservationStatus;
 import com.x.inventory.entity.StockBalance;
 import com.x.inventory.entity.StockReservation;
 import com.x.inventory.entity.StockReservationBatchAllocation;
+import com.x.inventory.entity.StockTransfer;
+import com.x.inventory.entity.StockTransferBatch;
+import com.x.inventory.entity.StockTransferLine;
+import com.x.inventory.entity.StockTransferStatus;
 import com.x.inventory.repository.InventoryBatchRepository;
 import com.x.inventory.repository.InventoryMovementRepository;
 import com.x.inventory.repository.StockBalanceRepository;
 import com.x.inventory.repository.StockReservationBatchAllocationRepository;
 import com.x.inventory.repository.StockReservationRepository;
+import com.x.inventory.repository.StockTransferRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,14 +41,18 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,6 +65,7 @@ public class InventoryService {
     private final StockReservationBatchAllocationRepository allocationRepository;
     private final InventoryMovementRepository movementRepository;
     private final StockReservationRepository reservationRepository;
+    private final StockTransferRepository transferRepository;
     private final ProductClient productClient;
 
     @Transactional
@@ -96,6 +112,260 @@ public class InventoryService {
                         PageRequest.of(page, size, Sort.by(
                                 Sort.Order.desc("createdAt"), Sort.Order.desc("id"))))
                 .map(this::toMovementResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<StockTransferResponse> findTransfers(
+            Long storeId, StockTransferStatus status, int page, int size) {
+        Specification<StockTransfer> specification = (root, query, criteriaBuilder) ->
+                criteriaBuilder.or(
+                        criteriaBuilder.equal(root.get("sourceStoreId"), storeId),
+                        criteriaBuilder.equal(root.get("destinationStoreId"), storeId));
+        if (status != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.equal(root.get("status"), status));
+        }
+        return transferRepository.findAll(specification,
+                        PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))))
+                .map(this::toTransferResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public StockTransferResponse getTransfer(Long id) {
+        return toTransferResponse(requireTransfer(id));
+    }
+
+    @Transactional
+    public StockTransferResponse createTransfer(CreateStockTransferRequest request) {
+        if (request.sourceStoreId().equals(request.destinationStoreId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose two different stores for a stock transfer");
+        }
+
+        Set<Long> variants = new HashSet<>();
+        StockTransfer transfer = StockTransfer.builder()
+                .sourceStoreId(request.sourceStoreId())
+                .destinationStoreId(request.destinationStoreId())
+                .status(StockTransferStatus.REQUESTED)
+                .note(trimToNull(request.note()))
+                .requestedBy(request.performedBy())
+                .build();
+
+        for (StockTransferLineRequest requested : request.lines()) {
+            if (!variants.add(requested.variantId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "A product variant can only appear once in a transfer");
+            }
+            ProductClient.VariantDetails source = requireVariantInStore(requested.variantId(), request.sourceStoreId());
+            requireVariantInStore(requested.variantId(), request.destinationStoreId());
+            transfer.addLine(StockTransferLine.builder()
+                    .variantId(requested.variantId())
+                    .productName(source.productName())
+                    .variantName(source.variantName())
+                    .sku(source.sku())
+                    .quantityRequested(requested.quantity())
+                    .quantityDispatched(0)
+                    .quantityReceived(0)
+                    .quantityMissing(0)
+                    .build());
+        }
+
+        return toTransferResponse(transferRepository.save(transfer));
+    }
+
+    @Transactional
+    public StockTransferResponse approveTransfer(Long id, StockTransferCommand command) {
+        StockTransfer transfer = lockTransfer(id);
+        requireTransferStatus(transfer, StockTransferStatus.REQUESTED, "Only a requested transfer can be approved");
+        transfer.setStatus(StockTransferStatus.APPROVED);
+        transfer.setApprovedBy(command.performedBy());
+        transfer.setApprovedAt(LocalDateTime.now());
+        transfer.setResolutionNote(trimToNull(command.note()));
+        return toTransferResponse(transferRepository.save(transfer));
+    }
+
+    @Transactional
+    public StockTransferResponse rejectTransfer(Long id, StockTransferCommand command) {
+        StockTransfer transfer = lockTransfer(id);
+        requireTransferStatus(transfer, StockTransferStatus.REQUESTED, "Only a requested transfer can be rejected");
+        transfer.setStatus(StockTransferStatus.REJECTED);
+        transfer.setApprovedBy(command.performedBy());
+        transfer.setApprovedAt(LocalDateTime.now());
+        transfer.setResolutionNote(trimToNull(command.note()));
+        return toTransferResponse(transferRepository.save(transfer));
+    }
+
+    @Transactional
+    public StockTransferResponse cancelTransfer(Long id, StockTransferCommand command) {
+        StockTransfer transfer = lockTransfer(id);
+        if (transfer.getStatus() != StockTransferStatus.REQUESTED
+                && transfer.getStatus() != StockTransferStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Only a requested or approved transfer can be cancelled");
+        }
+        transfer.setStatus(StockTransferStatus.CANCELLED);
+        transfer.setResolutionNote(trimToNull(command.note()));
+        return toTransferResponse(transferRepository.save(transfer));
+    }
+
+    @Transactional
+    public StockTransferResponse dispatchTransfer(Long id, StockTransferCommand command) {
+        StockTransfer transfer = lockTransfer(id);
+        requireTransferStatus(transfer, StockTransferStatus.APPROVED, "Only an approved transfer can be dispatched");
+
+        for (StockTransferLine line : transfer.getLines().stream()
+                .sorted(java.util.Comparator.comparing(StockTransferLine::getVariantId)).toList()) {
+            ensureBalanceFromCatalog(transfer.getSourceStoreId(), line.getVariantId());
+            StockBalance sourceBalance = lockBalance(transfer.getSourceStoreId(), line.getVariantId());
+            ensureBatchLedger(sourceBalance);
+            List<BatchQuantity> plan = planAvailableBatches(
+                    transfer.getSourceStoreId(), line.getVariantId(), sourceBalance.getQuantityReserved());
+            long available = sum(plan);
+            if (available < line.getQuantityRequested()
+                    || sourceBalance.getQuantityOnHand() - sourceBalance.getQuantityReserved()
+                    < line.getQuantityRequested()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Insufficient unreserved, non-expired stock for " + line.getProductName()
+                                + " (available " + Math.max(0, available) + ")");
+            }
+
+            long remaining = line.getQuantityRequested();
+            for (BatchQuantity planned : plan) {
+                if (remaining <= 0) break;
+                InventoryBatch sourceBatch = planned.batch();
+                long quantity = Math.min(remaining, planned.quantity());
+                sourceBatch.setQuantityOnHand(sourceBatch.getQuantityOnHand() - quantity);
+                batchRepository.save(sourceBatch);
+                line.addBatch(StockTransferBatch.builder()
+                        .sourceBatchId(sourceBatch.getId())
+                        .batchCode(sourceBatch.getBatchCode())
+                        .expiryDate(sourceBatch.getExpiryDate())
+                        .quantityDispatched(quantity)
+                        .quantityReceived(0)
+                        .quantityMissing(0)
+                        .build());
+                recordMovement(transfer.getSourceStoreId(), line.getVariantId(), sourceBatch.getId(),
+                        InventoryMovementType.STOCK_TRANSFER_OUT, -quantity, "TRANSFER", transfer.getId().toString(),
+                        command.performedBy(), transferMovementNote(transfer, "Dispatched", command.note()));
+                remaining -= quantity;
+            }
+            if (remaining > 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Stock batches could not cover the requested transfer quantity");
+            }
+            sourceBalance.setQuantityOnHand(sourceBalance.getQuantityOnHand() - line.getQuantityRequested());
+            stockBalanceRepository.save(sourceBalance);
+            line.setQuantityDispatched(line.getQuantityRequested());
+        }
+
+        transfer.setStatus(StockTransferStatus.IN_TRANSIT);
+        transfer.setDispatchedBy(command.performedBy());
+        transfer.setDispatchedAt(LocalDateTime.now());
+        return toTransferResponse(transferRepository.save(transfer));
+    }
+
+    @Transactional
+    public StockTransferResponse receiveTransfer(Long id, ReceiveStockTransferRequest request) {
+        StockTransfer transfer = lockTransfer(id);
+        if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT
+                && transfer.getStatus() != StockTransferStatus.PARTIALLY_RECEIVED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Only an in-transit transfer can be received");
+        }
+
+        Map<Long, StockTransferReceiveLineRequest> receivedLines = new HashMap<>();
+        for (StockTransferReceiveLineRequest lineRequest : request.lines()) {
+            if (receivedLines.put(lineRequest.lineId(), lineRequest) != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "A transfer line can only be received once per submission");
+            }
+        }
+        if (request.lines().stream().allMatch(line -> line.receivedQuantity() + line.missingQuantity() == 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Enter a received or missing quantity before submitting");
+        }
+
+        List<StockTransferLine> lines = transfer.getLines().stream()
+                .sorted(java.util.Comparator.comparing(StockTransferLine::getVariantId)).toList();
+        Set<Long> knownLineIds = lines.stream().map(StockTransferLine::getId).collect(Collectors.toSet());
+        if (!knownLineIds.containsAll(receivedLines.keySet())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A received line does not belong to this transfer");
+        }
+
+        for (StockTransferLine line : lines) {
+            StockTransferReceiveLineRequest lineRequest = receivedLines.get(line.getId());
+            if (lineRequest == null) continue;
+            long accepted = lineRequest.receivedQuantity();
+            long missing = lineRequest.missingQuantity();
+            long remaining = line.getQuantityDispatched() - line.getQuantityReceived() - line.getQuantityMissing();
+            if (accepted + missing > remaining) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Received and missing quantities exceed the remaining shipment for " + line.getProductName());
+            }
+            if (accepted + missing == 0) continue;
+
+            if (accepted > 0) requireVariantInStore(line.getVariantId(), transfer.getDestinationStoreId());
+            StockBalance destinationBalance = null;
+            if (accepted > 0) {
+                ensureBalanceFromCatalog(transfer.getDestinationStoreId(), line.getVariantId());
+                destinationBalance = lockBalance(transfer.getDestinationStoreId(), line.getVariantId());
+                ensureBatchLedger(destinationBalance);
+            }
+
+            long receiveRemaining = accepted;
+            long missingRemaining = missing;
+            long receivedForLine = 0;
+            for (StockTransferBatch dispatchedBatch : line.getBatches()) {
+                long availableFromBatch = dispatchedBatch.getQuantityDispatched()
+                        - dispatchedBatch.getQuantityReceived() - dispatchedBatch.getQuantityMissing();
+                if (availableFromBatch <= 0) continue;
+
+                long receivedFromBatch = Math.min(receiveRemaining, availableFromBatch);
+                long missingFromBatch = Math.min(missingRemaining, availableFromBatch - receivedFromBatch);
+                if (receivedFromBatch > 0) {
+                    InventoryBatch destinationBatch = createBatch(transfer.getDestinationStoreId(), line.getVariantId(),
+                            dispatchedBatch.getBatchCode(), dispatchedBatch.getExpiryDate(), "TRANSFER",
+                            transfer.getId().toString(), receivedFromBatch, receivedFromBatch);
+                    batchRepository.save(destinationBatch);
+                    recordMovement(transfer.getDestinationStoreId(), line.getVariantId(), destinationBatch.getId(),
+                            InventoryMovementType.STOCK_TRANSFER_IN, receivedFromBatch, "TRANSFER",
+                            transfer.getId().toString(), request.performedBy(),
+                            transferMovementNote(transfer, "Received", request.note()));
+                    receiveRemaining -= receivedFromBatch;
+                    receivedForLine += receivedFromBatch;
+                }
+                if (missingFromBatch > 0) {
+                    missingRemaining -= missingFromBatch;
+                }
+                dispatchedBatch.setQuantityReceived(dispatchedBatch.getQuantityReceived() + receivedFromBatch);
+                dispatchedBatch.setQuantityMissing(dispatchedBatch.getQuantityMissing() + missingFromBatch);
+                if (receiveRemaining == 0 && missingRemaining == 0) break;
+            }
+            if (receiveRemaining > 0 || missingRemaining > 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "The dispatched batch quantities do not match the transfer line");
+            }
+
+            line.setQuantityReceived(line.getQuantityReceived() + receivedForLine);
+            line.setQuantityMissing(line.getQuantityMissing() + missing);
+            if (destinationBalance != null) {
+                destinationBalance.setQuantityOnHand(destinationBalance.getQuantityOnHand() + receivedForLine);
+                stockBalanceRepository.save(destinationBalance);
+            }
+        }
+
+        boolean complete = transfer.getLines().stream().allMatch(line ->
+                line.getQuantityReceived() + line.getQuantityMissing() == line.getQuantityDispatched());
+        boolean hasVariance = transfer.getLines().stream().anyMatch(line -> line.getQuantityMissing() > 0);
+        boolean hasReceipts = transfer.getLines().stream().anyMatch(line ->
+                line.getQuantityReceived() > 0 || line.getQuantityMissing() > 0);
+        transfer.setStatus(complete
+                ? (hasVariance ? StockTransferStatus.RECEIVED_WITH_VARIANCE : StockTransferStatus.RECEIVED)
+                : (hasReceipts ? StockTransferStatus.PARTIALLY_RECEIVED : StockTransferStatus.IN_TRANSIT));
+        transfer.setReceivedBy(request.performedBy());
+        transfer.setReceivedAt(complete ? LocalDateTime.now() : null);
+        return toTransferResponse(transferRepository.save(transfer));
     }
 
     /** The first movement starts an undated opening lot for any catalog stock already on hand. */
@@ -567,9 +837,63 @@ public class InventoryService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Stock balance not found"));
     }
 
+    private ProductClient.VariantDetails requireVariantInStore(Long variantId, Long storeId) {
+        try {
+            ProductClient.VariantDetails variant = productClient.getVariantDetails(variantId, storeId);
+            if (variant == null || !storeId.equals(variant.storeId())) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Product variant " + variantId + " does not belong to store " + storeId);
+            }
+            return variant;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()
+                    || exception.getStatusCode().value() == HttpStatus.BAD_REQUEST.value()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Product variant " + variantId + " is not available in store " + storeId);
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Could not verify the product variant with the product service");
+        }
+    }
+
+    private StockTransfer requireTransfer(Long id) {
+        return transferRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Stock transfer not found"));
+    }
+
+    private StockTransfer lockTransfer(Long id) {
+        return transferRepository.findForUpdateById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Stock transfer not found"));
+    }
+
+    private void requireTransferStatus(StockTransfer transfer, StockTransferStatus expected, String message) {
+        if (transfer.getStatus() != expected) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, message);
+        }
+    }
+
+    private String transferMovementNote(StockTransfer transfer, String action, String note) {
+        String details = trimToNull(note);
+        String value = "Transfer #" + transfer.getId() + " " + action
+                + (details == null ? "" : ": " + details);
+        return value.length() <= 500 ? value : value.substring(0, 500);
+    }
+
+    private StockTransferResponse toTransferResponse(StockTransfer transfer) {
+        List<StockTransferResponse.Line> lines = transfer.getLines().stream()
+                .map(line -> new StockTransferResponse.Line(line.getId(), line.getVariantId(), line.getProductName(),
+                        line.getVariantName(), line.getSku(), line.getQuantityRequested(), line.getQuantityDispatched(),
+                        line.getQuantityReceived(), line.getQuantityMissing()))
+                .toList();
+        return new StockTransferResponse(transfer.getId(), transfer.getSourceStoreId(), transfer.getDestinationStoreId(),
+                transfer.getStatus(), transfer.getNote(), transfer.getResolutionNote(), transfer.getRequestedBy(),
+                transfer.getApprovedBy(), transfer.getDispatchedBy(), transfer.getReceivedBy(), transfer.getCreatedAt(),
+                transfer.getApprovedAt(), transfer.getDispatchedAt(), transfer.getReceivedAt(), lines);
+    }
+
     private void ensureBalanceFromCatalog(Long storeId, Long variantId) {
         if (stockBalanceRepository.findByStoreIdAndVariantId(storeId, variantId).isPresent()) return;
-        ProductClient.VariantQuantity variant = productClient.getVariantQuantity(variantId, storeId);
+        ProductClient.VariantDetails variant = productClient.getVariantDetails(variantId, storeId);
         if (variant == null || !storeId.equals(variant.storeId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Product variant does not belong to store " + storeId);
