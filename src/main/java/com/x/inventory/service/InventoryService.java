@@ -342,8 +342,19 @@ public class InventoryService {
             case "NO_DATE" -> specification.and((root, query, cb) -> cb.isNull(root.get("expiryDate")));
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown expiry filter");
         };
-        Page<InventoryBatch> batches = batchRepository.findAll(specification, PageRequest.of(page, size,
-                Sort.by(Sort.Order.asc("expiryDate").nullsLast(), Sort.Order.asc("receivedAt"), Sort.Order.asc("id"))));
+        specification = specification.and((root, query, cb) -> {
+            // Spring Data JPA's nullsLast Sort metadata is unsupported for this Criteria query.
+            // Use a CASE expression so dated lots sort first, then by earliest expiry.
+            if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                query.orderBy(
+                        cb.asc(cb.<Integer>selectCase().when(cb.isNull(root.get("expiryDate")), 1).otherwise(0)),
+                        cb.asc(root.<LocalDate>get("expiryDate")),
+                        cb.asc(root.<LocalDateTime>get("receivedAt")),
+                        cb.asc(root.get("id")));
+            }
+            return cb.conjunction();
+        });
+        Page<InventoryBatch> batches = batchRepository.findAll(specification, PageRequest.of(page, size));
         Map<Long, Map<Long, Long>> reservedByVariant = new HashMap<>();
         return batches.map(batch -> {
             Map<Long, Long> reserved = reservedByVariant.computeIfAbsent(batch.getVariantId(), ignored -> {
