@@ -71,7 +71,11 @@ public class ProductClient {
     }
 
     public record VariantDetails(Long variantId, Long storeId, String productName, String variantName, String sku,
-                                 Integer quantity) {}
+                                 Integer quantity) {
+        public VariantDetails(Long variantId, Long storeId, String productName, String variantName, String sku) {
+            this(variantId, storeId, productName, variantName, sku, null);
+        }
+    }
 
     public record SupplierSummary(Long id, String supplierName, String status) {}
 }
