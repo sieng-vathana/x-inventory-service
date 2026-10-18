@@ -78,8 +78,10 @@ public class InventoryService {
                 .map(this::toMovementResponse);
     }
 
+    /** The first movement of a variant starts from its catalog quantity, so receiving never loses opening stock. */
     @Transactional
     public StockBalanceResponse stockIn(StockChangeRequest request) {
+        ensureBalanceFromCatalog(request.storeId(), request.variantId());
         stockBalanceRepository.addOnHand(request.storeId(), request.variantId(), request.quantity());
         InventoryMovementType movementType = "ADJUSTMENT".equalsIgnoreCase(request.referenceType())
                 ? InventoryMovementType.ADJUSTMENT_IN : InventoryMovementType.STOCK_IN;
@@ -90,6 +92,7 @@ public class InventoryService {
 
     @Transactional
     public StockBalanceResponse stockOut(StockChangeRequest request) {
+        ensureBalanceFromCatalog(request.storeId(), request.variantId());
         int updated = stockBalanceRepository.removeAvailable(
                 request.storeId(), request.variantId(), request.quantity());
         if (updated == 0) {
