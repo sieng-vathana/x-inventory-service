@@ -130,7 +130,8 @@ public class PurchaseService {
             }
             line.setQtyReceived(line.getQtyReceived() + requested.quantity());
             inventoryService.stockIn(new StockChangeRequest(order.getStoreId(), line.getVariantId(), requested.quantity(),
-                    PURCHASE_ORDER_REFERENCE, order.getPoNumber(), request.performedBy(), note));
+                    PURCHASE_ORDER_REFERENCE, order.getPoNumber(), request.performedBy(), note,
+                    requested.batchCode(), requested.expiryDate()));
             received += requested.quantity();
         }
         if (received == 0) {

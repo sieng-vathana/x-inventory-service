@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /** Quantities that arrived for some lines of a purchase order; each is added to the store's stock. */
@@ -15,6 +16,10 @@ public record ReceivePurchaseOrderRequest(
         @Positive Long performedBy,
         @Size(max = 500) String note) {
 
-    public record Line(@NotNull @Positive Long lineId, @PositiveOrZero long quantity) {
+    public record Line(@NotNull @Positive Long lineId, @PositiveOrZero long quantity,
+                       @Size(max = 100) String batchCode, LocalDate expiryDate) {
+        public Line(Long lineId, long quantity) {
+            this(lineId, quantity, null, null);
+        }
     }
 }

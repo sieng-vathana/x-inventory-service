@@ -29,6 +29,9 @@ public class StockReservation {
     @Column(name = "variant_id", nullable = false) private Long variantId;
     @Column(name = "order_id", nullable = false) private Long orderId;
     @Column(nullable = false) private long quantity;
+    @Column(name = "allow_negative_stock", nullable = false,
+            columnDefinition = "boolean not null default false")
+    private boolean allowNegativeStock;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 16)
     private ReservationStatus status;
     @Column(name = "expires_at", nullable = false) private LocalDateTime expiresAt;

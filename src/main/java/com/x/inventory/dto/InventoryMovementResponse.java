@@ -8,6 +8,7 @@ public record InventoryMovementResponse(
         Long id,
         Long storeId,
         Long variantId,
+        Long batchId,
         InventoryMovementType movementType,
         long quantityDelta,
         String referenceType,

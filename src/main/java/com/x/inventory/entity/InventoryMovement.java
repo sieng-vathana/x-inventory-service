@@ -25,6 +25,7 @@ public class InventoryMovement {
     private Long id;
     @Column(name = "store_id", nullable = false) private Long storeId;
     @Column(name = "variant_id", nullable = false) private Long variantId;
+    @Column(name = "batch_id") private Long batchId;
     @Enumerated(EnumType.STRING) @Column(name = "movement_type", nullable = false, length = 32)
     private InventoryMovementType movementType;
     @Column(name = "quantity_delta", nullable = false) private long quantityDelta;

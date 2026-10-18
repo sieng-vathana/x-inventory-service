@@ -2,6 +2,10 @@ package com.x.inventory.controller;
 
 import com.sharedlib.response.ApiResponse;
 import com.sharedlib.response.PageResponse;
+import com.x.inventory.dto.ExpiryBatchResponse;
+import com.x.inventory.dto.ExpirySummaryResponse;
+import com.x.inventory.dto.ExpiryWriteOffRequest;
+import com.x.inventory.dto.ExpiryBatchUpdateRequest;
 import com.x.inventory.dto.InventoryMovementResponse;
 import com.x.inventory.dto.StockBalanceResponse;
 import com.x.inventory.dto.StockChangeRequest;
@@ -110,6 +114,41 @@ public class InventoryController {
         return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), new PageResponse<>(
                 result.getContent(), result.getNumber(), result.getSize(), result.getTotalElements(),
                 result.getTotalPages(), result.hasNext())));
+    }
+
+    @GetMapping("/expiry/batches")
+    public ResponseEntity<ApiResponse<PageResponse<ExpiryBatchResponse>>> expiryBatches(
+            @RequestParam @Positive Long storeId,
+            @RequestParam(defaultValue = "ALL") String filter,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        Page<ExpiryBatchResponse> result = inventoryService.findExpiryBatches(storeId, filter, page, size);
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), new PageResponse<>(
+                result.getContent(), result.getNumber(), result.getSize(), result.getTotalElements(),
+                result.getTotalPages(), result.hasNext())));
+    }
+
+    @GetMapping("/expiry/summary")
+    public ResponseEntity<ApiResponse<ExpirySummaryResponse>> expirySummary(@RequestParam @Positive Long storeId) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), inventoryService.expirySummary(storeId)));
+    }
+
+    @PostMapping("/expiry/batches/{batchId}/write-off")
+    public ResponseEntity<ApiResponse<StockBalanceResponse>> writeOffExpiredBatch(
+            @PathVariable @Positive Long batchId,
+            @RequestParam @Positive Long storeId,
+            @Valid @RequestBody ExpiryWriteOffRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Expired stock written off",
+                inventoryService.writeOffExpiredBatch(storeId, batchId, request)));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/expiry/batches/{batchId}")
+    public ResponseEntity<ApiResponse<ExpiryBatchResponse>> updateExpiryBatch(
+            @PathVariable @Positive Long batchId,
+            @RequestParam @Positive Long storeId,
+            @Valid @RequestBody ExpiryBatchUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(HttpStatus.OK.value(), "Stock batch updated",
+                inventoryService.updateBatchDetails(storeId, batchId, request)));
     }
 
     @DeleteMapping("/reservations/{id}")

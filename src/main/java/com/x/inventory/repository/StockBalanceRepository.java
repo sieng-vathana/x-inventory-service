@@ -3,15 +3,22 @@ package com.x.inventory.repository;
 import com.x.inventory.entity.StockBalance;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 
 import java.util.Optional;
 
 public interface StockBalanceRepository extends JpaRepository<StockBalance, Long> {
     Optional<StockBalance> findByStoreIdAndVariantId(Long storeId, Long variantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from StockBalance b where b.storeId = :storeId and b.variantId = :variantId")
+    Optional<StockBalance> findForUpdateByStoreIdAndVariantId(
+            @Param("storeId") Long storeId, @Param("variantId") Long variantId);
 
     @Modifying
     @Query(value = """
