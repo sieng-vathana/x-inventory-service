@@ -420,14 +420,20 @@ public class InventoryService {
         }
         StockReservation existing = reservationRepository
                 .findByOrderIdAndVariantId(request.orderId(), request.variantId()).orElse(null);
+        StockReservation lapsed = null;
         if (existing != null) {
             if (existing.getStatus() == ReservationStatus.ACTIVE
                     && existing.getQuantity() == request.quantity()
                     && existing.getStoreId().equals(request.storeId())) {
                 return toReservationResponse(existing);
             }
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "A reservation already exists for this order and variant");
+            // A hold that expired before its order was fulfilled is taken again for the same order.
+            if (existing.getStatus() == ReservationStatus.EXPIRED && existing.getStoreId().equals(request.storeId())) {
+                lapsed = existing;
+            } else {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "A reservation already exists for this order and variant");
+            }
         }
 
         ensureBalanceFromCatalog(request.storeId(), request.variantId());
@@ -440,10 +446,19 @@ public class InventoryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient non-expired, available stock");
         }
 
-        StockReservation reservation = reservationRepository.save(StockReservation.builder()
-                .storeId(request.storeId()).variantId(request.variantId()).orderId(request.orderId())
-                .quantity(request.quantity()).allowNegativeStock(allowNegative)
-                .status(ReservationStatus.ACTIVE).expiresAt(request.expiresAt()).build());
+        StockReservation reservation;
+        if (lapsed != null) {
+            lapsed.setQuantity(request.quantity());
+            lapsed.setAllowNegativeStock(allowNegative);
+            lapsed.setStatus(ReservationStatus.ACTIVE);
+            lapsed.setExpiresAt(request.expiresAt());
+            reservation = reservationRepository.save(lapsed);
+        } else {
+            reservation = reservationRepository.save(StockReservation.builder()
+                    .storeId(request.storeId()).variantId(request.variantId()).orderId(request.orderId())
+                    .quantity(request.quantity()).allowNegativeStock(allowNegative)
+                    .status(ReservationStatus.ACTIVE).expiresAt(request.expiresAt()).build());
+        }
         saveAllocations(reservation, plan, request.quantity());
         balance.setQuantityReserved(balance.getQuantityReserved() + request.quantity());
         stockBalanceRepository.save(balance);
